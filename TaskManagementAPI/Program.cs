@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
 using TaskManagementAPI.Data;
+using Serilog;
+using Microsoft.AspNetCore.Diagnostics;
 
 namespace TaskManagementAPI
 {
@@ -10,6 +12,12 @@ namespace TaskManagementAPI
     {
         public static void Main(string[] args)
         {
+            Log.Logger = new LoggerConfiguration()
+                .WriteTo.Console()
+                .Enrich.FromLogContext()
+                .MinimumLevel.Information()
+                .CreateLogger();
+
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
@@ -36,6 +44,8 @@ namespace TaskManagementAPI
                 options.UseSqlServer(builder.Configuration.GetConnectionString("")));
 
             builder.Services.AddAuthorization();
+
+            builder.Host.UseSerilog();
 
             builder.Services.AddControllers();
             
@@ -79,6 +89,29 @@ namespace TaskManagementAPI
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
+
+            app.UseExceptionHandler(errorApp =>
+            {
+                errorApp.Run(async context =>
+                {
+                    context.Response.StatusCode = 500;
+                    context.Response.ContentType = "application/json";
+
+                    var exceptionHandlerPathFeature =
+                        context.Features.Get<IExceptionHandlerPathFeature>();
+
+                    if (exceptionHandlerPathFeature?.Error != null)
+                    {
+                        Log.Error(exceptionHandlerPathFeature.Error, "Unhandled exception");
+                    }
+
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        StatusCode = 500,
+                        Message = "Oops! Something went wrong."
+                    });
+                });
+            });
 
             app.UseAuthentication();
             app.UseAuthorization();
